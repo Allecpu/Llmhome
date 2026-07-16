@@ -687,10 +687,10 @@ Gemma 3 12B è la fascia intermedia concreta: circa metà della velocità del Qw
 
 ### Confronto qualitativo Qwen 9B vs Gemma 3 12B
 
-Suite deterministica di dieci prompt su matematica, logica, istruzioni rigide, JSON, estrazione, tool call, codice, italiano, riassunto e pianificazione:
+Suite deterministica di dieci prompt su matematica, logica, istruzioni rigide, JSON, estrazione, tool call, codice, italiano, riassunto e pianificazione. Il primo run penalizzava Qwen (1/7) per un difetto del banco di prova: il template chat apriva sempre il blocco `<think>` e il budget token si esauriva nel reasoning. Corretto con prefill `<think></think>` in template ChatML manuale (il template Qwen 3.5 supporta solo la variabile `enable_thinking`, non il soft switch `/no_think`). Risultati con banco corretto:
 
-- **Qwen 3.5 9B:** ~39 token/s e 10 richieste completate, ma emette sempre `Thinking Process`; `/no_think` e `enable_thinking=False` non hanno funzionato nella pipeline OpenVINO. Molte risposte non raggiungono il risultato finale nemmeno con 256 token.
-- **Gemma 3 12B:** ~24 token/s, risposte nettamente più concise e corrette; 4/7 controlli stretti superati. JSON e tool call erano semanticamente corretti ma racchiusi in Markdown.
-- **Stabilità Gemma:** prima suite completata; ripetizioni successive in `CL_OUT_OF_RESOURCES` dopo 6-9 richieste. La KV cache `u4` non ha risolto.
+- **Qwen 3.5 9B:** ~37 token/s, 5/7 controlli stretti e 6/7 lenient; JSON e tool call in formato esatto senza fence. Suite completa in 10,2 s.
+- **Gemma 3 12B:** ~24 token/s, 4/7 stretti ma 7/7 lenient: contenuto sempre corretto, sistematicamente avvolto in fence Markdown. Suite completa in 16,3 s.
+- **Stabilità:** Gemma completa la suite in un processo dedicato; `CL_OUT_OF_RESOURCES` compare con più pipeline in sequenza nello stesso processo. Regola: un modello per processo.
 
-Conclusione provvisoria: **Gemma 3 12B vince per qualità**, Qwen 9B per velocità e stabilità. Prima di scegliere Gemma come server Hermes serve risolvere o aggirare il consumo crescente di memoria. Risposte e dettagli sono in `OPENVINO_MODEL_COMPARISON.md` e nei file JSON generati dalla suite.
+Conclusione aggiornata: **Qwen 9B è il candidato migliore per Hermes** (più veloce, formato esatto, stabile); Gemma 3 12B è pari o superiore sul contenuto ma richiede post-processing dei fence e processo dedicato. Risposte e dettagli sono in `OPENVINO_MODEL_COMPARISON.md` e in `OPENVINO_MODEL_COMPARISON.json`.

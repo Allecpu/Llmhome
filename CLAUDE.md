@@ -22,7 +22,8 @@ Windows-based local LLM serving + benchmarking setup around llama.cpp (Vulkan bu
 ## Architecture / key facts
 
 - **`start-gemma-server.ps1`** is the source of truth for server config: model path, context size (65536), KV cache quant (`q8_0`), flash-attn, `--fit`/`--fit-target` VRAM fitting, thread counts. The `.bat` is just a launcher that shells into the `.ps1`. Edit tuning in the `.ps1`.
-- **Model path** is `$env:USERPROFILE\.lmstudio\models\...\Qwen3.5-9B-Q4_K_M.gguf` — reuses LM Studio's download location, not `models/` (which is empty, gitignore-free but for weights). Changing model = edit `$model` in the `.ps1`.
+- **Model path** is `$env:USERPROFILE\.lmstudio\models\...\Qwen3.5-9B-Q4_K_M.gguf` — reuses LM Studio's download location. Changing model = edit `$model` in the `.ps1`.
+- **Speculative decoding**: the server also requires a draft model at `models\Qwen3.5-0.8B-Q8_0.gguf` (`$modelDraft` in the `.ps1`, startup fails without it). `models/` is gitignored — weights live there locally, plus OpenVINO exports under `models/ov/` used by `benchmark-openvino-models.py`.
 - **`LM_STUDIO_BENCHMARK.md`** records hardware assumptions, methodology, and throughput/memory results (Italian). Update it when tuning server flags — record before/after numbers.
 - **`*.log`** at root are diagnostic output (`<model>-<scenario>.out.log`/`.err.log`), not source.
 

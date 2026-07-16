@@ -1,22 +1,36 @@
 # Confronto OpenVINO: Qwen 9B vs Gemma 3 12B
 
-Test eseguito il 16 luglio 2026 su Intel Arc A770 16 GB con OpenVINO/GenAI nightly 2026.4, GPU pura e generazione deterministica.
+Test eseguito il 16 luglio 2026 su Intel Arc A770 16 GB con OpenVINO/GenAI nightly 2026.4, GPU pura e generazione deterministica. Aggiornato dopo la correzione del template chat (vedi «Correzione metodologica»).
 
-| Modello | Velocità tipica | Test automatici stretti | Esito operativo |
-|---|---:|---:|---|
-| Qwen 3.5 9B INT4 | ~39 token/s | 1/7 | reasoning visibile, output spesso troncato |
-| Gemma 3 12B INT4 | ~24 token/s | 4/7 | risposte corrette e concise, ma formattazione non sempre stretta |
+| Modello | Velocità mediana | Strict | Lenient | Esito operativo |
+|---|---:|---:|---:|---|
+| Qwen 3.5 9B INT4 | ~37 token/s | 5/7 | 6/7 | reasoning soppresso, risposte pulite e dirette |
+| Gemma 3 12B INT4 | ~24 token/s | 4/7 | 7/7 | contenuto sempre corretto, ma avvolto in fence Markdown |
+
+Punteggio *strict* = risposta esattamente nel formato richiesto; *lenient* = contenuto corretto anche se avvolto in fence Markdown o testo extra.
+
+## Correzione metodologica
+
+Il primo run dava Qwen a 1/7: era un artefatto del banco di prova, non del modello. La `VLMPipeline` applicava il template chat di Qwen, che apre sempre un blocco `<think>`; il budget di 256 token si esauriva nel reasoning prima della risposta. `/no_think` appeso al prompt non funziona perché il template di Qwen 3.5 supporta solo la variabile `enable_thinking`, non il soft switch.
+
+La soluzione è il prefill `<think>\n\n</think>\n\n` nel turno assistant, con template ChatML costruito manualmente e `apply_chat_template=False`. Per Gemma invece il template automatico della pipeline funziona correttamente. Con questo assetto entrambi i modelli rispondono con gli stessi budget di token (24-140 per caso).
+
+L'export `models/ov/qwen9b-language` non è utilizzabile con `LLMPipeline`: è il solo componente language del VLM e si aspetta `inputs_embeds`, non `input_ids`.
 
 ## Risultati qualitativi
 
-Gemma ha risposto correttamente a matematica, logica e istruzioni esatte. JSON e tool call contenevano i dati corretti, ma erano racchiusi in blocchi Markdown; l'estrazione ha aggiunto l'etichetta `ID`. Le risposte italiane e il riassunto erano chiari e pertinenti. Il piano era troppo verboso rispetto al limite.
+Qwen, senza reasoning, produce JSON e tool call in formato esatto senza fence (strict pass) e risponde correttamente a matematica, logica e codice. Fallisce solo `extract` (scrive il template letterale `ID|...` invece dell'ID reale) e `instruction` in strict (aggiunge un punto finale). Risposte in italiano, riassunto e piano sono chiare e pertinenti.
 
-Qwen ha individuato internamente le risposte corrette, ma ha emesso sempre `Thinking Process`. Né `/no_think` né `enable_thinking=False` passati alla pipeline hanno disattivato il comportamento. Anche con 256 token molte risposte non hanno raggiunto l'output finale, rendendo inaffidabili JSON, tool calling e istruzioni a formato rigido.
+Gemma risponde correttamente a tutto sul piano del contenuto (7/7 lenient), ma racchiude sistematicamente JSON e tool call in blocchi ```` ```json ````; in `extract` antepone l'etichetta `ID|`. Per uso programmatico serve post-processing o constrained decoding; con OVMS il tool calling guidato risolverebbe il problema alla radice.
+
+## Latenza reale
+
+Il throughput grezzo favorisce Qwen (~37 vs ~24 token/s) e ora anche la latenza per risposta: suite completa in 10,2 s contro 16,3 s di Gemma. TTFT mediano quasi identico (76 vs 83 ms).
 
 ## Stabilità
 
-Qwen ha completato dieci richieste consecutive. Gemma ha completato la prima suite, ma nelle ripetizioni successive è andato in `CL_OUT_OF_RESOURCES` dopo 6-9 richieste; `KV_CACHE_PRECISION=u4` non ha risolto. Il comportamento indica un problema di memoria o frammentazione del plugin GPU da approfondire prima dell'uso come server persistente.
+Gemma completa l'intera suite da sola in un processo dedicato. Il `CL_OUT_OF_RESOURCES` compare sistematicamente quando nello stesso processo girano più pipeline in sequenza (per esempio Qwen seguito da Gemma) e in quel caso il tentativo di ricreare la pipeline fa crashare il processo. Regola operativa: **un modello per processo**. Come server persistente a lungo termine resta da fare uno stress test dedicato (il run originale falliva dopo 6-9 richieste ripetendo la suite nello stesso processo).
 
 ## Conclusione
 
-**Gemma 3 12B è il miglior modello per qualità delle risposte tra i due candidati**, mentre **Qwen 9B resta il runtime più veloce e stabile**. Nessuno dei due è ancora pronto come vincitore assoluto per Hermes: Gemma deve superare uno stress test persistente; Qwen richiede una configurazione affidabile che sopprima o separi il reasoning.
+Con il reasoning soppresso correttamente, **Qwen 3.5 9B è il candidato migliore per Hermes**: più veloce, formato di output esatto senza post-processing e stabile. **Gemma 3 12B è pari o superiore sul contenuto** (7/7 lenient) ma richiede estrazione dai fence Markdown e un processo dedicato per evitare l'esaurimento risorse GPU. Il verdetto precedente («Gemma vince per qualità») derivava dal template chat errato nel banco di prova.
