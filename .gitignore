@@ -4,3 +4,4 @@ models/
 *.log
 *.out
 *.err
+__pycache__/

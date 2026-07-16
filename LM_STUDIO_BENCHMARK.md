@@ -684,3 +684,13 @@ Test del 16 luglio 2026, OpenVINO/GenAI nightly 2026.4, senza Docker.
 - **Gemma 3 12B INT4:** gira interamente sulla Arc A770 tramite `VLMPipeline`, occupa 7,55 GB, carica in 16,7 s, TTFT 217 ms e genera **24,16 token/s**; 128 token richiedono 5,47 s e `17 * 23` restituisce `391`.
 
 Gemma 3 12B è la fascia intermedia concreta: circa metà della velocità del Qwen 9B (~47 token/s), ma oltre dieci volte più rapido del Qwen 14B HETERO. Restano da confrontare qualità, tool calling e contesti lunghi prima dell'adozione come server principale.
+
+### Confronto qualitativo Qwen 9B vs Gemma 3 12B
+
+Suite deterministica di dieci prompt su matematica, logica, istruzioni rigide, JSON, estrazione, tool call, codice, italiano, riassunto e pianificazione:
+
+- **Qwen 3.5 9B:** ~39 token/s e 10 richieste completate, ma emette sempre `Thinking Process`; `/no_think` e `enable_thinking=False` non hanno funzionato nella pipeline OpenVINO. Molte risposte non raggiungono il risultato finale nemmeno con 256 token.
+- **Gemma 3 12B:** ~24 token/s, risposte nettamente più concise e corrette; 4/7 controlli stretti superati. JSON e tool call erano semanticamente corretti ma racchiusi in Markdown.
+- **Stabilità Gemma:** prima suite completata; ripetizioni successive in `CL_OUT_OF_RESOURCES` dopo 6-9 richieste. La KV cache `u4` non ha risolto.
+
+Conclusione provvisoria: **Gemma 3 12B vince per qualità**, Qwen 9B per velocità e stabilità. Prima di scegliere Gemma come server Hermes serve risolvere o aggirare il consumo crescente di memoria. Risposte e dettagli sono in `OPENVINO_MODEL_COMPARISON.md` e nei file JSON generati dalla suite.
