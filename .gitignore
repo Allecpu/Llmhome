@@ -1,0 +1,6 @@
+llama-api-key.txt
+.venv-openvino/
+models/
+*.log
+*.out
+*.err
