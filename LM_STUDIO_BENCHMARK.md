@@ -729,3 +729,13 @@ Validazione sul server di produzione:
 Avvertenza operativa: la **prima richiesta con `tools` dopo un avvio a freddo può fallire** con `Response generation failed` (compilazione della guided generation); i tentativi successivi funzionano. Prevedere un retry o una richiesta di warm-up con tools all'avvio. Il client deve inviare `"chat_template_kwargs": {"enable_thinking": false}` per il reasoning off per richiesta.
 
 llama.cpp (`start-llama-server.ps1`, porta 8080) resta come fallback con speculative decoding. Launcher rinominati il 17 luglio: `start-server.bat` avvia OVMS (primario); i vecchi nomi `start-gemma-server.*` nelle sezioni precedenti sono storici.
+
+## Pulizia repository (17 luglio 2026)
+
+Rimosso tutto ciò che riguardava candidati scartati o esperimenti conclusi (recuperabile dalla history git):
+
+- **`tools/llama-vulkan-b10002/`** eliminata: il fallback llama.cpp ora usa la build **b10052** (`start-llama-server.ps1` e `bench-prefill.ps1` aggiornati). Verificato: avvio con speculative decoding, health OK, richiesta autenticata corretta (`system_fingerprint: b10052-b2dd28a3b`).
+- **`smoke-gptoss.ps1`** eliminato (GPT-OSS scartato; puntava alla build b10038 non più su disco).
+- **`llamacpp-issue-gemma-moe.md`** e **`llamacpp-issue-25777-comment.md`** eliminati: già pubblicati upstream come [issue #25777](https://github.com/ggml-org/llama.cpp/issues/25777) e relativo commento.
+- **`*.bench.md`** (12 file di output grezzo di `bench-prefill.ps1`) eliminati: i risultati sono riassunti nelle sezioni precedenti di questo documento.
+- `bench-prefill.ps1` semplificato ai soli casi attivi (modello `qwen`, build `b10052`); le varianti gemma/gptoss/ncmoe restano nella history.

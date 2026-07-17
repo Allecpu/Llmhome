@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$server = Join-Path $PSScriptRoot 'tools\llama-vulkan-b10002\llama-server.exe'
+$server = Join-Path $PSScriptRoot 'tools\llama-vulkan-b10052\llama-server.exe'
 $model = Join-Path $env:USERPROFILE '.lmstudio\models\lmstudio-community\Qwen3.5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf'
 # Modello draft per speculative decoding: stesso vocabolario del 9B, ~0,8 GiB.
 # Il modellino propone piu token in blocco, il 9B li verifica: +~9% generazione.
