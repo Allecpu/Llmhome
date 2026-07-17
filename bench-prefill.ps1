@@ -3,9 +3,9 @@
 # Uso: ./bench-prefill.ps1 -Model qwen | gemma   (default: qwen)
 
 param(
-    [ValidateSet('qwen', 'qwenq6', 'gemma', 'gptoss')]
+    [ValidateSet('qwen', 'qwenq6', 'gemma', 'gemma4', 'gptoss')]
     [string]$Model = 'qwen',
-    [ValidateSet('b10002', 'b10038')]
+    [ValidateSet('b10002', 'b10038', 'b10052')]
     [string]$Build = 'b10002',
     [ValidateSet('q8_0', 'q4_0', 'f16')]
     [string]$KvType = 'q8_0',
@@ -23,6 +23,7 @@ $models = @{
     qwen   = Join-Path $env:USERPROFILE '.lmstudio\models\lmstudio-community\Qwen3.5-9B-GGUF\Qwen3.5-9B-Q4_K_M.gguf'
     qwenq6 = Join-Path $PSScriptRoot 'models\Qwen3.5-9B-Q6_K.gguf'
     gemma  = Join-Path $env:USERPROFILE '.lmstudio\models\lmstudio-community\gemma-4-26B-A4B-it-GGUF\gemma-4-26B-A4B-it-Q4_K_M.gguf'
+    gemma4 = Join-Path $PSScriptRoot 'models\gemma-4-12B-it-qat-UD-Q4_K_XL.gguf'
 }
 
 # gptoss: risolve il file scaricato tramite glob (nome esatto non noto a priori)

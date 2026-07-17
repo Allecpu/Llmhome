@@ -694,3 +694,38 @@ Suite deterministica di dieci prompt su matematica, logica, istruzioni rigide, J
 - **Stabilità:** Gemma completa la suite in un processo dedicato; `CL_OUT_OF_RESOURCES` compare con più pipeline in sequenza nello stesso processo. Regola: un modello per processo.
 
 Conclusione aggiornata: **Qwen 9B è il candidato migliore per Hermes** (più veloce, formato esatto, stabile); Gemma 3 12B è pari o superiore sul contenuto ma richiede post-processing dei fence e processo dedicato. Risposte e dettagli sono in `OPENVINO_MODEL_COMPARISON.md` e in `OPENVINO_MODEL_COMPARISON.json`.
+
+## Gemma 4 12B QAT su Vulkan: scartato per crollo a profondità (17 luglio 2026)
+
+Provato l'unico candidato serio della fascia 9-14B uscito nel 2026: **Gemma 4 12B QAT** (denso, quindi immune dal bug MoE Vulkan #25777), GGUF `unsloth/gemma-4-12B-it-qat-UD-Q4_K_XL` da 6,24 GiB, build llama.cpp `b10052` (la più recente; b10038 non era più su disco, scaricata in `tools/llama-vulkan-b10052/`).
+
+**Correttezza:** ok. Il bug garbled di Gemma 4 su Arc Vulkan ([issue #24560](https://github.com/ggml-org/llama.cpp/issues/24560)) è stato chiuso a giugno 2026; lo smoke test a pieno offload produce output coerente. Resta aperto [#24311](https://github.com/ggml-org/llama.cpp/issues/24311) ma riguarda solo l'offload parziale. Nota: il modello ragiona di default (`[Start thinking]`), come server richiederebbe `--reasoning off`.
+
+**Prestazioni (`bench-prefill.ps1 -Model gemma4 -Build b10052`):** crollo drastico con la profondità, molto peggiore degli altri candidati:
+
+| Test | Gemma 4 12B (KV Q8) | Gemma 4 12B (KV f16) | Qwen 9B (KV Q8) | GPT-OSS 20B (KV Q8) |
+|---|---:|---:|---:|---:|
+| prefill 512 @ depth 0 | 627,3 | 688,7 | 684,3 | 942,2 |
+| prefill 512 @ depth 8K | 174,8 | — | 488,8 | 668,4 |
+| prefill 512 @ depth 32K | 57,0 | — | 262,3 | 268,1 |
+| prefill 512 @ depth 64K | 30,0 | 52,8 | 163,2 | 156,7 |
+| prefill 64K a freddo | 57,0 (~19 min) | — | 262,1 | 256,2 |
+| generazione @ depth 64K | 12,5 | n.m. | 26,3 | 18,4 |
+
+La KV f16 recupera molto rispetto a Q8 (+76% di prefill a 64K): il kernel flash-attn Vulkan con KV quantizzata ha un path particolarmente lento per questa architettura (llama-bench la etichetta ancora `gemma4 ?B`, supporto acerbo). Ma anche nel caso migliore il prefill a 64K resta **3 volte sotto Qwen 9B** e la generazione a profondità è metà (12,5 contro 26,3 token/s).
+
+**Verdetto:** scartato per Hermes. La qualità non è nemmeno stata misurata: a 64K il profilo prestazionale è fuori soglia a prescindere (19 minuti di prefill a freddo, ~12 token/s di generazione). Da ritestare eventualmente quando i kernel Vulkan per l'architettura Gemma 4 matureranno. **Il candidato "più grande del 9B" resta GPT-OSS 20B**, il cui confronto di qualità diretto con il 9B è ancora il passo mancante.
+
+## Migrazione a OVMS: server pronto e validato (17 luglio 2026)
+
+Completata la migrazione operativa dello stack Hermes su OVMS. Nuovo launcher **`start-ovms-server.ps1`**: Qwen 3.5 9B int4 (`models/ov/qwen9b`) su GPU Arc, endpoint OpenAI-compatible `http://<host>:8000/v3/chat/completions`, autenticazione con la stessa chiave di llama.cpp (`--api_key_file llama-api-key.txt`), esposizione LAN (`--rest_bind_address 0.0.0.0`), parser `hermes3` + `qwen3`, tool guided generation e prefix caching attivi, `cache_size 8`.
+
+Validazione sul server di produzione:
+
+- **Suite qualità** (`benchmark-api-models.py qwen http://127.0.0.1:8000/v3 llama-api-key.txt --nothink`): **5/7 strict, 6/7 lenient** — identico al banco GenAI, stessi due fail noti (`instruction` punto finale, `extract` template letterale). Suite completa in ~8 s.
+- **Tool calling nativo** (array `tools` OpenAI): `finish_reason: tool_calls`, argomenti corretti, ripetibile 3/3 anche combinato con `enable_thinking: false` (content vuoto, tool_calls puliti).
+- **Stress test**: 60 richieste consecutive miste (chat/JSON/tool), **0 errori**, latenza stabile senza drift — chat mediana 1,69 s, JSON 0,41 s, tool 0,61 s.
+
+Avvertenza operativa: la **prima richiesta con `tools` dopo un avvio a freddo può fallire** con `Response generation failed` (compilazione della guided generation); i tentativi successivi funzionano. Prevedere un retry o una richiesta di warm-up con tools all'avvio. Il client deve inviare `"chat_template_kwargs": {"enable_thinking": false}` per il reasoning off per richiesta.
+
+llama.cpp (`start-llama-server.ps1`, porta 8080) resta come fallback con speculative decoding. Launcher rinominati il 17 luglio: `start-server.bat` avvia OVMS (primario); i vecchi nomi `start-gemma-server.*` nelle sezioni precedenti sono storici.
