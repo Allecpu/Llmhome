@@ -7,7 +7,6 @@ ROOT = Path(__file__).parent
 # template: chatml-nothink prefilla <think></think> per sopprimere il reasoning di Qwen3.5
 MODELS = {
     "qwen35-9b": {"path": ROOT / "models/ov/qwen9b", "template": "chatml-nothink"},
-    "gemma3-12b": {"path": ROOT / "models/ov/gemma3-12b", "template": "auto"},
 }
 def build_prompt(template, prompt):
     # auto: la pipeline applica il chat template del modello; chatml-nothink:
