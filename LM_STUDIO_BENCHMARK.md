@@ -739,3 +739,13 @@ Rimosso tutto ciò che riguardava candidati scartati o esperimenti conclusi (rec
 - **`llamacpp-issue-gemma-moe.md`** e **`llamacpp-issue-25777-comment.md`** eliminati: già pubblicati upstream come [issue #25777](https://github.com/ggml-org/llama.cpp/issues/25777) e relativo commento.
 - **`*.bench.md`** (12 file di output grezzo di `bench-prefill.ps1`) eliminati: i risultati sono riassunti nelle sezioni precedenti di questo documento.
 - `bench-prefill.ps1` semplificato ai soli casi attivi (modello `qwen`, build `b10052`); le varianti gemma/gptoss/ncmoe restano nella history.
+
+## Build SYCL: bypass del bug Vulkan su `--n-cpu-moe` (24 luglio 2026)
+
+L'[issue #25777](https://github.com/ggml-org/llama.cpp/issues/25777) (`GGML_ASSERT(id >= 0 && id < n_expert)` su Vulkan quando si offloadano esperti MoE su RAM CPU con `--n-cpu-moe`) resta aperta upstream senza fix. Per sbloccare modelli MoE più grandi dei 16GB di VRAM dell'Arc A770 (Gemma 4 26B-A4B, GPT-OSS) è stata compilata una build llama.cpp con backend **SYCL** (Intel oneAPI DPC++) invece di Vulkan — nuovo launcher **`start-llama-sycl-server.ps1`**, binari in `tools/llama-sycl/`.
+
+**Setup:** oneAPI Base Toolkit 2025.1 + VS Build Tools 2022 (workload C++) + Ninja, `cmake -DGGML_SYCL=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=icx`. Due patch locali necessarie (enum `intel_gpu_bmg_g31`/`intel_gpu_wcl` assenti negli header oneAPI 2025.1, riferiti solo da codice Battlemage-only irrilevante per Arc A770/Alchemist). Bundling runtime non ovvio: oltre alle DLL statiche, `ur_win_proxy_loader.dll` carica **dinamicamente** `ur_loader.dll` (non è un import statico — mancava e causava un crash silenzioso, jump a indirizzo nullo, dentro `sycl::device::get_devices` ad ogni enumerazione device). Servono anche i device library `libsycl-fallback-*.spv` per il JIT dei kernel.
+
+**Verifica end-to-end:** `llama-ls-sycl-device.exe` rileva l'Arc A770 (16706M VRAM). Server Qwen 9B su GPU: risposta corretta, ~26,6 token/s generazione. Test critico — Gemma 4 26B-A4B con `--n-cpu-moe 99` e prompt di 20.727 token (prefill attraversa l'intero range 6K-22K dove Vulkan asserisce): **HTTP 200, nessun crash**, cache hit 20.211/20.727 token. Bug Vulkan confermato bypassato su SYCL.
+
+**Quando usarlo:** solo per modelli MoE troppo grandi per stare interamente in VRAM. Per Qwen 9B (dense, sta tutto in VRAM) Vulkan e OVMS restano più veloci — SYCL è il fallback specifico per lo scenario VRAM+RAM.
