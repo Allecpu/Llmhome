@@ -15,8 +15,9 @@ $ErrorActionPreference = 'Stop'
 # -NCpuMoe 99 offload tutti gli esperti su CPU (piu' lento, meno VRAM
 # richiesta); ridurre il valore per bilanciare piu' esperti su GPU se il
 # modello ci sta parzialmente.
+# Nessuna API key: server esposto in chiaro su LAN (0.0.0.0). Usare solo
+# su rete fidata.
 $server = Join-Path $PSScriptRoot 'tools\llama-sycl\llama-server.exe'
-$apiKeyFile = Join-Path $PSScriptRoot 'llama-api-key.txt'
 
 if (-not (Test-Path -LiteralPath $server)) {
     throw "llama-server (SYCL) non trovato: $server"
@@ -26,20 +27,10 @@ if (-not (Test-Path -LiteralPath $Model)) {
     throw "Modello non trovato: $Model"
 }
 
-if (-not (Test-Path -LiteralPath $apiKeyFile)) {
-    throw "API key non trovata: $apiKeyFile"
-}
-
-$apiKey = (Get-Content -LiteralPath $apiKeyFile -Raw).Trim()
-if ([string]::IsNullOrWhiteSpace($apiKey)) {
-    throw "API key vuota: $apiKeyFile"
-}
-
 & $server `
     --model $Model `
     --host 0.0.0.0 `
     --port $Port `
-    --api-key $apiKey `
     --ctx-size $CtxSize `
     --parallel 1 `
     --n-gpu-layers 99 `
