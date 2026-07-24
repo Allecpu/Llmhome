@@ -13,6 +13,7 @@ Windows-based local LLM serving + benchmarking setup on Intel Arc A770 / i5-1360
 ./start-ovms-server.ps1           # primary: OVMS, Qwen 9B int4 OpenVINO, port 8000
 ./start-llama-server.ps1          # fallback: llama.cpp Vulkan, Qwen 9B GGUF, port 8080
 ./start-llama-sycl-server.ps1     # SYCL fallback: Arc A770, port 8081 — needed for MoE models with --n-cpu-moe
+./start-llama-sycl-moe-server.ps1 # SYCL + --n-cpu-moe preset for large MoE models, port 8082, -Model/-NCpuMoe/-CtxSize/-Port params, defaults to Gemma 4 26B-A4B
 ```
 
 - OVMS endpoint: `http://127.0.0.1:8000/v3/chat/completions` — binds `0.0.0.0` (LAN-exposed, API-key protected). Reasoning off is per-request: `"chat_template_kwargs": {"enable_thinking": false}`. First `tools` request after cold start may fail once (guided-generation warm-up) — retry.
