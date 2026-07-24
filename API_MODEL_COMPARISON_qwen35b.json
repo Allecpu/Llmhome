@@ -1,0 +1,101 @@
+{
+  "created": "2026-07-24 17:50:10",
+  "endpoint": "http://127.0.0.1:8082/v1",
+  "results": [
+    {
+      "model": "qwen35b",
+      "cases": [
+        {
+          "id": "math",
+          "prompt": "Rispondi soltanto con il numero: 37 * 19 =",
+          "response": "703",
+          "automatic_score": 1,
+          "automatic_score_lenient": 1,
+          "completion_tokens": 4,
+          "elapsed_seconds": 8.738241600000038
+        },
+        {
+          "id": "instruction",
+          "prompt": "Scrivi esattamente: cielo, mare, terra. Nessun altro testo.",
+          "response": "cielo, mare, terra.",
+          "automatic_score": 0,
+          "automatic_score_lenient": 1,
+          "completion_tokens": 8,
+          "elapsed_seconds": 1.3893621999995958
+        },
+        {
+          "id": "logic",
+          "prompt": "Tutti i falchi sono uccelli. Nessun uccello è un mammifero. Un falco può essere un mammifero? Rispondi solo sì o no.",
+          "response": "No",
+          "automatic_score": 1,
+          "automatic_score_lenient": 1,
+          "completion_tokens": 2,
+          "elapsed_seconds": 2.292679100002715
+        },
+        {
+          "id": "json",
+          "prompt": "Restituisci solo JSON valido con city Roma e temperature 22. Nessun markdown.",
+          "response": "{\"city\": \"Roma\", \"temperature\": 22}",
+          "automatic_score": 1,
+          "automatic_score_lenient": 1,
+          "completion_tokens": 14,
+          "elapsed_seconds": 1.9551686000013433
+        },
+        {
+          "id": "extract",
+          "prompt": "Testo: Ordine A17, cliente Luca Bianchi, totale EUR 83.40. Rispondi solo ID|CLIENTE|TOTALE",
+          "response": "A17|Luca Bianchi|83.40",
+          "automatic_score": 1,
+          "automatic_score_lenient": 1,
+          "completion_tokens": 15,
+          "elapsed_seconds": 3.0145492999981798
+        },
+        {
+          "id": "tool",
+          "prompt": "Chiama get_weather per Roma. Restituisci solo JSON con name e arguments contenente city.",
+          "response": "{\n  \"name\": \"get_weather\",\n  \"arguments\": {\n    \"city\": \"Roma\"\n  }\n}",
+          "automatic_score": 1,
+          "automatic_score_lenient": 1,
+          "completion_tokens": 30,
+          "elapsed_seconds": 3.3631916000013007
+        },
+        {
+          "id": "code",
+          "prompt": "Scrivi solo una funzione Python is_even(n) corretta, senza spiegazioni e markdown.",
+          "response": "def is_even(n):\n    return n % 2 == 0",
+          "automatic_score": 1,
+          "automatic_score_lenient": 1,
+          "completion_tokens": 16,
+          "elapsed_seconds": 2.045244699998875
+        },
+        {
+          "id": "italian",
+          "prompt": "Spiega in italiano in massimo 60 parole perché fare backup offline. Sii concreto.",
+          "response": "Il backup offline protegge i dati da ransomware, attacchi informatici e distruzioni accidentali. Mantenendo copie fisiche disconnesse dalla rete, si garantisce che le informazioni rimangano intatte e recuperabili anche in caso di compromissione dei sistemi digitali, assicurando la continuità operativa e la sicurezza delle informazioni critiche.",
+          "automatic_score": null,
+          "automatic_score_lenient": null,
+          "completion_tokens": 69,
+          "elapsed_seconds": 7.005271300000459
+        },
+        {
+          "id": "summary",
+          "prompt": "Riassumi in massimo 35 parole: Il server locale mantiene i dati sul dispositivo, evita costi per richiesta e funziona senza Internet, ma richiede hardware adeguato, aggiornamenti e configurazione sicura.",
+          "response": "Il server locale conserva dati sul dispositivo, elimina costi di richiesta e opera offline, ma necessita di hardware adeguato, aggiornamenti e configurazioni sicure.",
+          "automatic_score": null,
+          "automatic_score_lenient": null,
+          "completion_tokens": 31,
+          "elapsed_seconds": 4.485825200001273
+        },
+        {
+          "id": "planning",
+          "prompt": "Piano numerato di massimo 5 passi per migrare un server API senza downtime. Includi rollback e verifica.",
+          "response": "Ecco un piano in 5 passi per migrare un server API con zero downtime, includendo strategie di rollback e verifica:\n\n1. **Preparazione e Deploy in Parallelo**  \n   - Avvia una nuova istanza del server API (v2) accanto a quella esistente (v1).  \n   - Configura un bilanciatore di carico (es. Nginx, AWS ALB) per instradare il traffico verso entrambe le istanze.  \n   - Verifica che la v2 sia operativa con test di integrazione locali e controlli di salute (health checks).\n\n2. **Canary Deployment (Traffico Graduale)**  \n  ",
+          "automatic_score": null,
+          "automatic_score_lenient": null,
+          "completion_tokens": 140,
+          "elapsed_seconds": 14.404645800001163
+        }
+      ]
+    }
+  ]
+}
