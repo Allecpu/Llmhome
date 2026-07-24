@@ -2,16 +2,16 @@
 
 ## Project Structure & Module Organization
 
-This repository packages a Windows-based local LLM serving and benchmarking setup. Root-level `start-gemma-server.ps1` contains the llama.cpp server configuration; `start-gemma-server.bat` is its user-friendly launcher. Bundled Vulkan binaries live under `tools/llama-vulkan-b10002/`. Keep downloaded GGUF files in `models/` or in the LM Studio path referenced by the PowerShell script. Benchmark methodology and results belong in `LM_STUDIO_BENCHMARK.md`. Runtime `*.log` files are diagnostic output, not source code.
+This repository packages a Windows-based local LLM serving and benchmarking setup with two stacks. The primary server is OVMS (OpenVINO Model Server) configured in root-level `start-ovms-server.ps1`, serving the OpenVINO model under `models/ov/qwen9b` on port 8000; `start-server.bat` is its user-friendly launcher. The fallback is llama.cpp: `start-llama-server.ps1` holds its configuration (port 8080). Bundled binaries live under `tools/ovms/` and `tools/llama-vulkan-*/`. Keep downloaded GGUF files in `models/` or in the LM Studio path referenced by the PowerShell script; OpenVINO exports go under `models/ov/`. Benchmark methodology and results belong in `LM_STUDIO_BENCHMARK.md`; the quality suite lives in `benchmark_cases.py` (shared cases/scoring), `benchmark-openvino-models.py` (GenAI pipelines), and `benchmark-api-models.py` (OpenAI-compatible endpoints). Runtime `*.log` files are diagnostic output, not source code.
 
 ## Build, Test, and Development Commands
 
-There is no compilation step; the repository includes prebuilt llama.cpp executables.
+There is no compilation step; the repository includes prebuilt OVMS and llama.cpp executables. Only one server at a time — both need most of the 16 GB VRAM; running them together collapses OVMS to ~1 token/s.
 
-- `./start-gemma-server.ps1` starts the OpenAI-compatible server and validates the executable, model, and API key.
-- `./start-gemma-server.bat` launches the same server from Command Prompt and displays active settings.
-- `./tools/llama-vulkan-b10002/llama-server.exe --help` verifies the bundled runtime and lists supported flags.
-- `Invoke-RestMethod http://127.0.0.1:8080/health` performs a smoke test after startup.
+- `./start-server.bat` (or `./start-ovms-server.ps1`) starts the primary OVMS server (validates ovms.exe, model, API key).
+- `./start-llama-server.ps1` starts the fallback llama.cpp server.
+- `Invoke-RestMethod http://127.0.0.1:8000/v2/health/ready` (OVMS) or `http://127.0.0.1:8080/health` (llama.cpp) performs a smoke test after startup.
+- `python benchmark-api-models.py qwen http://127.0.0.1:8000/v3 llama-api-key.txt --nothink` runs the quality suite against the running server.
 
 Run commands from the repository root in Windows PowerShell. Stop the server with `Ctrl+C`.
 
@@ -21,7 +21,7 @@ Use four-space indentation in PowerShell and preserve `$ErrorActionPreference = 
 
 ## Testing Guidelines
 
-No automated test framework or coverage requirement is configured. For script changes, run the server, call `/health`, and make one authenticated request against `http://127.0.0.1:8080/v1`. Confirm useful failure messages when validation logic changes. Record meaningful performance comparisons and hardware assumptions in `LM_STUDIO_BENCHMARK.md`.
+No automated test framework or coverage requirement is configured. For script changes, run the affected server, call its health endpoint, and make one authenticated request (`http://127.0.0.1:8000/v3/chat/completions` for OVMS, `http://127.0.0.1:8080/v1` for llama.cpp). The first OVMS request with `tools` after a cold start may fail once (guided-generation warm-up) — retry before concluding it is broken. Confirm useful failure messages when validation logic changes. Record meaningful performance comparisons and hardware assumptions in `LM_STUDIO_BENCHMARK.md`.
 
 ## Commit & Pull Request Guidelines
 

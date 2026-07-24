@@ -684,3 +684,129 @@ Test del 16 luglio 2026, OpenVINO/GenAI nightly 2026.4, senza Docker.
 - **Gemma 3 12B INT4:** gira interamente sulla Arc A770 tramite `VLMPipeline`, occupa 7,55 GB, carica in 16,7 s, TTFT 217 ms e genera **24,16 token/s**; 128 token richiedono 5,47 s e `17 * 23` restituisce `391`.
 
 Gemma 3 12B è la fascia intermedia concreta: circa metà della velocità del Qwen 9B (~47 token/s), ma oltre dieci volte più rapido del Qwen 14B HETERO. Restano da confrontare qualità, tool calling e contesti lunghi prima dell'adozione come server principale.
+
+### Confronto qualitativo Qwen 9B vs Gemma 3 12B
+
+Suite deterministica di dieci prompt su matematica, logica, istruzioni rigide, JSON, estrazione, tool call, codice, italiano, riassunto e pianificazione. Il primo run penalizzava Qwen (1/7) per un difetto del banco di prova: il template chat apriva sempre il blocco `<think>` e il budget token si esauriva nel reasoning. Corretto con prefill `<think></think>` in template ChatML manuale (il template Qwen 3.5 supporta solo la variabile `enable_thinking`, non il soft switch `/no_think`). Risultati con banco corretto:
+
+- **Qwen 3.5 9B:** ~37 token/s, 5/7 controlli stretti e 6/7 lenient; JSON e tool call in formato esatto senza fence. Suite completa in 10,2 s.
+- **Gemma 3 12B:** ~24 token/s, 4/7 stretti ma 7/7 lenient: contenuto sempre corretto, sistematicamente avvolto in fence Markdown. Suite completa in 16,3 s.
+- **Stabilità:** Gemma completa la suite in un processo dedicato; `CL_OUT_OF_RESOURCES` compare con più pipeline in sequenza nello stesso processo. Regola: un modello per processo.
+
+Conclusione aggiornata: **Qwen 9B è il candidato migliore per Hermes** (più veloce, formato esatto, stabile); Gemma 3 12B è pari o superiore sul contenuto ma richiede post-processing dei fence e processo dedicato. Risposte e dettagli sono in `OPENVINO_MODEL_COMPARISON.md` e in `OPENVINO_MODEL_COMPARISON.json`.
+
+## Gemma 4 12B QAT su Vulkan: scartato per crollo a profondità (17 luglio 2026)
+
+Provato l'unico candidato serio della fascia 9-14B uscito nel 2026: **Gemma 4 12B QAT** (denso, quindi immune dal bug MoE Vulkan #25777), GGUF `unsloth/gemma-4-12B-it-qat-UD-Q4_K_XL` da 6,24 GiB, build llama.cpp `b10052` (la più recente; b10038 non era più su disco, scaricata in `tools/llama-vulkan-b10052/`).
+
+**Correttezza:** ok. Il bug garbled di Gemma 4 su Arc Vulkan ([issue #24560](https://github.com/ggml-org/llama.cpp/issues/24560)) è stato chiuso a giugno 2026; lo smoke test a pieno offload produce output coerente. Resta aperto [#24311](https://github.com/ggml-org/llama.cpp/issues/24311) ma riguarda solo l'offload parziale. Nota: il modello ragiona di default (`[Start thinking]`), come server richiederebbe `--reasoning off`.
+
+**Prestazioni (`bench-prefill.ps1 -Model gemma4 -Build b10052`):** crollo drastico con la profondità, molto peggiore degli altri candidati:
+
+| Test | Gemma 4 12B (KV Q8) | Gemma 4 12B (KV f16) | Qwen 9B (KV Q8) | GPT-OSS 20B (KV Q8) |
+|---|---:|---:|---:|---:|
+| prefill 512 @ depth 0 | 627,3 | 688,7 | 684,3 | 942,2 |
+| prefill 512 @ depth 8K | 174,8 | — | 488,8 | 668,4 |
+| prefill 512 @ depth 32K | 57,0 | — | 262,3 | 268,1 |
+| prefill 512 @ depth 64K | 30,0 | 52,8 | 163,2 | 156,7 |
+| prefill 64K a freddo | 57,0 (~19 min) | — | 262,1 | 256,2 |
+| generazione @ depth 64K | 12,5 | n.m. | 26,3 | 18,4 |
+
+La KV f16 recupera molto rispetto a Q8 (+76% di prefill a 64K): il kernel flash-attn Vulkan con KV quantizzata ha un path particolarmente lento per questa architettura (llama-bench la etichetta ancora `gemma4 ?B`, supporto acerbo). Ma anche nel caso migliore il prefill a 64K resta **3 volte sotto Qwen 9B** e la generazione a profondità è metà (12,5 contro 26,3 token/s).
+
+**Verdetto:** scartato per Hermes. La qualità non è nemmeno stata misurata: a 64K il profilo prestazionale è fuori soglia a prescindere (19 minuti di prefill a freddo, ~12 token/s di generazione). Da ritestare eventualmente quando i kernel Vulkan per l'architettura Gemma 4 matureranno. **Il candidato "più grande del 9B" resta GPT-OSS 20B**, il cui confronto di qualità diretto con il 9B è ancora il passo mancante.
+
+## Migrazione a OVMS: server pronto e validato (17 luglio 2026)
+
+Completata la migrazione operativa dello stack Hermes su OVMS. Nuovo launcher **`start-ovms-server.ps1`**: Qwen 3.5 9B int4 (`models/ov/qwen9b`) su GPU Arc, endpoint OpenAI-compatible `http://<host>:8000/v3/chat/completions`, autenticazione con la stessa chiave di llama.cpp (`--api_key_file llama-api-key.txt`), esposizione LAN (`--rest_bind_address 0.0.0.0`), parser `hermes3` + `qwen3`, tool guided generation e prefix caching attivi, `cache_size 8`.
+
+Validazione sul server di produzione:
+
+- **Suite qualità** (`benchmark-api-models.py qwen http://127.0.0.1:8000/v3 llama-api-key.txt --nothink`): **5/7 strict, 6/7 lenient** — identico al banco GenAI, stessi due fail noti (`instruction` punto finale, `extract` template letterale). Suite completa in ~8 s.
+- **Tool calling nativo** (array `tools` OpenAI): `finish_reason: tool_calls`, argomenti corretti, ripetibile 3/3 anche combinato con `enable_thinking: false` (content vuoto, tool_calls puliti).
+- **Stress test**: 60 richieste consecutive miste (chat/JSON/tool), **0 errori**, latenza stabile senza drift — chat mediana 1,69 s, JSON 0,41 s, tool 0,61 s.
+
+Avvertenza operativa: la **prima richiesta con `tools` dopo un avvio a freddo può fallire** con `Response generation failed` (compilazione della guided generation); i tentativi successivi funzionano. Prevedere un retry o una richiesta di warm-up con tools all'avvio. Il client deve inviare `"chat_template_kwargs": {"enable_thinking": false}` per il reasoning off per richiesta.
+
+llama.cpp (`start-llama-server.ps1`, porta 8080) resta come fallback con speculative decoding. Launcher rinominati il 17 luglio: `start-server.bat` avvia OVMS (primario); i vecchi nomi `start-gemma-server.*` nelle sezioni precedenti sono storici.
+
+## Pulizia repository (17 luglio 2026)
+
+Rimosso tutto ciò che riguardava candidati scartati o esperimenti conclusi (recuperabile dalla history git):
+
+- **`tools/llama-vulkan-b10002/`** eliminata: il fallback llama.cpp ora usa la build **b10052** (`start-llama-server.ps1` e `bench-prefill.ps1` aggiornati). Verificato: avvio con speculative decoding, health OK, richiesta autenticata corretta (`system_fingerprint: b10052-b2dd28a3b`).
+- **`smoke-gptoss.ps1`** eliminato (GPT-OSS scartato; puntava alla build b10038 non più su disco).
+- **`llamacpp-issue-gemma-moe.md`** e **`llamacpp-issue-25777-comment.md`** eliminati: già pubblicati upstream come [issue #25777](https://github.com/ggml-org/llama.cpp/issues/25777) e relativo commento.
+- **`*.bench.md`** (12 file di output grezzo di `bench-prefill.ps1`) eliminati: i risultati sono riassunti nelle sezioni precedenti di questo documento.
+- `bench-prefill.ps1` semplificato ai soli casi attivi (modello `qwen`, build `b10052`); le varianti gemma/gptoss/ncmoe restano nella history.
+
+## Build SYCL: bypass del bug Vulkan su `--n-cpu-moe` (24 luglio 2026)
+
+L'[issue #25777](https://github.com/ggml-org/llama.cpp/issues/25777) (`GGML_ASSERT(id >= 0 && id < n_expert)` su Vulkan quando si offloadano esperti MoE su RAM CPU con `--n-cpu-moe`) resta aperta upstream senza fix. Per sbloccare modelli MoE più grandi dei 16GB di VRAM dell'Arc A770 (Gemma 4 26B-A4B, GPT-OSS) è stata compilata una build llama.cpp con backend **SYCL** (Intel oneAPI DPC++) invece di Vulkan — nuovo launcher **`start-llama-sycl-server.ps1`**, binari in `tools/llama-sycl/`.
+
+**Setup:** oneAPI Base Toolkit 2025.1 + VS Build Tools 2022 (workload C++) + Ninja, `cmake -DGGML_SYCL=ON -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=icx`. Due patch locali necessarie (enum `intel_gpu_bmg_g31`/`intel_gpu_wcl` assenti negli header oneAPI 2025.1, riferiti solo da codice Battlemage-only irrilevante per Arc A770/Alchemist). Bundling runtime non ovvio: oltre alle DLL statiche, `ur_win_proxy_loader.dll` carica **dinamicamente** `ur_loader.dll` (non è un import statico — mancava e causava un crash silenzioso, jump a indirizzo nullo, dentro `sycl::device::get_devices` ad ogni enumerazione device). Servono anche i device library `libsycl-fallback-*.spv` per il JIT dei kernel.
+
+**Verifica end-to-end:** `llama-ls-sycl-device.exe` rileva l'Arc A770 (16706M VRAM). Server Qwen 9B su GPU: risposta corretta, ~26,6 token/s generazione. Test critico — Gemma 4 26B-A4B con `--n-cpu-moe 99` e prompt di 20.727 token (prefill attraversa l'intero range 6K-22K dove Vulkan asserisce): **HTTP 200, nessun crash**, cache hit 20.211/20.727 token. Bug Vulkan confermato bypassato su SYCL.
+
+**Quando usarlo:** solo per modelli MoE troppo grandi per stare interamente in VRAM. Per Qwen 9B (dense, sta tutto in VRAM) Vulkan e OVMS restano più veloci — SYCL è il fallback specifico per lo scenario VRAM+RAM.
+
+## Nuovi candidati MoE su SYCL + `--n-cpu-moe 99`: GLM-4.7 Flash e Qwen 3.6 35B-A3B (24 luglio 2026)
+
+Con il bug Vulkan bypassato, riaperta la ricerca di un MoE più grande di Gemma 26B-A4B. Due candidati scaricati ed eseguiti su `start-llama-sycl-moe-server.ps1`, porta 8082, contesto 65536: **GLM-4.7 Flash 30B-A3B** (`unsloth/GLM-4.7-Flash-GGUF`, Q4_K_M, 18,3 GB) e **Qwen 3.6 35B-A3B** (`bartowski/Qwen_Qwen3.6-35B-A3B-GGUF`, Q4_K_M, 22,3 GB — quant meno aggressiva della IQ3_XXS provata in precedenza, ora percorribile perché l'offload MoE-aware non è più vincolato dalla VRAM).
+
+**Test contesto basso** (prompt corto, generazione naturale):
+
+| Modello | Token/s generazione |
+|---|---:|
+| Gemma 4 26B-A4B (rif.) | 26,19 |
+| Qwen 3.6 35B-A3B Q4_K_M | 10,06 |
+| GLM-4.7 Flash 30B-A3B Q4_K_M | 5,28 |
+
+**Test contesto profondo** (prompt ripetitivo ~22-30K token, stesso schema usato per validare il bypass Vulkan su Gemma):
+
+| Modello | Prompt token | Prefill | Generazione | Esito |
+|---|---:|---:|---:|---|
+| GLM-4.7 Flash | 30.013 | 12,95 tok/s (38m 51s) | 2,94 tok/s | nessun crash, output corretto ma **troppo lento per uso pratico** |
+| Qwen 3.6 35B-A3B | 22.523 | 123,07 tok/s (3m 6s) | 9,68 tok/s | nessun crash, output corretto, **prefill ottimo** |
+
+Il prefill di Qwen 3.6 35B-A3B (123 tok/s) batte anche GPT-OSS 20B con offload MoE-aware misurato in precedenza (114,2 tok/s, [vedi sopra](#offload-moe-aware-con---n-cpu-moe-correzione-al-verdetto-gemma-16-luglio-2026)), nonostante un modello quasi doppio. GLM-4.7 Flash è invece circa 10 volte più lento in prefill: scartato, nessun ulteriore test.
+
+**Bench qualità** (`benchmark-api-models.py`, 10 casi, stesso identico set usato per tutti i modelli precedenti):
+
+| Modello | Strict | Lenient |
+|---|---:|---:|
+| Qwen 3.6 35B-A3B Q4_K_M | 6/7 | 7/7 |
+| Gemma 4 26B-A4B | 5/7 | 7/7 |
+
+Unica differenza strict: Qwen passa il caso `tool` (JSON di function-calling ben formato), Gemma no. Risultati completi in `API_MODEL_COMPARISON_qwen35b.json` e `API_MODEL_COMPARISON_gemma26b.json`.
+
+**Verdetto e cambio default:** Qwen 3.6 35B-A3B supera Gemma 26B-A4B sia in qualità (bench) sia nel prefill a contesto profondo (il vero collo di bottiglia per Hermes a 64K), pagando un costo in generazione a contesto basso (10 vs 26 tok/s) — accettabile perché lo scenario che giustifica SYCL+`--n-cpu-moe` è comunque quello a contesto lungo. **`start-llama-sycl-moe-server.ps1` aggiornato: default ora `Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf`** (era Gemma 4 26B-A4B). Gemma 26B-A4B resta installato come alternativa più reattiva a contesto basso. GLM-4.7 Flash rimosso dal disco (scartato per prestazioni).
+
+## Qwen3-Next-80B-A3B: stessi parametri attivi, qualità superiore (24 luglio 2026)
+
+Cercando il miglior compromesso qualità/dimensione per questa macchina (Arc A770 16GB VRAM + 48GB RAM), individuato **Qwen3-Next-80B-A3B** (`lmstudio-community/Qwen3-Next-80B-A3B-Instruct-GGUF`, Q4_K_M, 48,5 GB): stessi 3B parametri attivi per token di Qwen 3.6 35B-A3B (quindi velocità di generazione paragonabile), ma 80B totali invece di 35B. Architettura ibrida nuova (Gated DeltaNet + attention lineare, PR [ggml-org/llama.cpp#16095](https://github.com/ggml-org/llama.cpp/pull/16095)): rischio noto, supporto SYCL non scontato, verificato solo provando.
+
+**Caricamento:** nessun errore, nessuna patch necessaria — la build SYCL esistente (compilata luglio 2026, successiva al merge del supporto Qwen3-Next) carica il modello in ~15s via mmap.
+
+**Bench qualità** (stesso set di 10 casi):
+
+| Modello | Strict | Lenient |
+|---|---:|---:|
+| **Qwen3-Next-80B-A3B Q4_K_M** | **7/7** | **7/7** |
+| Qwen 3.6 35B-A3B Q4_K_M | 6/7 | 7/7 |
+| Gemma 4 26B-A4B | 5/7 | 7/7 |
+
+Punteggio pieno: unico modello a passare anche il caso `instruction` in strict, che sia Qwen 35B sia Gemma fallivano.
+
+**Prestazioni** (contesto basso e profondo ~31,5K token, stesso schema di test):
+
+| Modello | Gen. basso ctx | Prefill profondo | Gen. profondo |
+|---|---:|---:|---:|
+| Qwen3-Next-80B-A3B | 7,41 tok/s | 99,32 tok/s (31.519 token, 5m 21s) | 7,54 tok/s |
+| Qwen 3.6 35B-A3B | 10,06 tok/s | 123,07 tok/s (22.523 token, 3m 6s) | 9,68 tok/s |
+
+Leggermente più lento di Qwen 35B (più byte da leggere per esperto da RAM, modello più grande), ma nessun crollo di prestazioni: il costo dei parametri attivi identici resta dominante, non la dimensione totale. Nessun crash, nessuna corruzione di testo, risposta corretta a 31,5K token.
+
+**Margine RAM/VRAM:** file da 48,5GB su 48GB RAM + 16GB VRAM = 64GB combinati. Margine risicato ma sufficiente con `--n-cpu-moe 99`: attention/KV/prefill in VRAM, esperti in RAM, verificato stabile a contesto pieno 65536 senza spill o OOM.
+
+**Verdetto e cambio default:** Qwen3-Next-80B-A3B è il nuovo miglior compromesso qualità/dimensione trovato per questa macchina — qualità massima (7/7), velocità quasi identica a Qwen 3.6 35B-A3B grazie agli stessi parametri attivi. **`start-llama-sycl-moe-server.ps1` aggiornato: default ora `Qwen3-Next-80B-A3B-Instruct-Q4_K_M.gguf`** (era Qwen 3.6 35B-A3B). Qwen 3.6 35B-A3B e Gemma 26B-A4B restano installati come alternative più leggere/reattive.
